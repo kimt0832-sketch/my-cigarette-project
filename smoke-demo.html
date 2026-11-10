@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kiểm thử khói</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <style>
+        :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10141b; color: #e8edf5; }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        canvas { display: block; width: 100%; height: 100%; }
+        #viewport { position: fixed; inset: 0; }
+        aside { position: absolute; top: 16px; left: 16px; width: min(320px, calc(100% - 32px)); padding: 20px; background: #19212beb; border: 1px solid #394556; border-radius: 12px; }
+        h1 { margin: 0 0 8px; font-size: 21px; }
+        p { margin: 8px 0 18px; color: #b9c4d4; font-size: 13px; line-height: 1.6; }
+        label { display: block; margin-top: 18px; font-size: 14px; }
+        output { float: right; font-variant-numeric: tabular-nums; }
+        input[type="range"] { display: block; width: 100%; margin: 12px 0; accent-color: #94c2ff; }
+        input[type="checkbox"] { accent-color: #94c2ff; }
+        button { padding: 10px 14px; color: inherit; font: inherit; font-size: 14px; background: #293749; border: 1px solid #65788f; border-radius: 6px; cursor: pointer; }
+        button:hover { background: #394b63; }
+        button:focus-visible, input:focus-visible { outline: 2px solid #b2d3ff; outline-offset: 4px; }
+        .actions { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+        #status { margin-bottom: 0; }
+        @media (max-width: 600px) {
+            #viewport { bottom: 340px; }
+            aside { top: auto; bottom: 16px; width: calc(100% - 32px); padding: 16px; }
+            label { margin-top: 10px; }
+            p { margin-bottom: 10px; }
+            .actions { margin-top: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <main id="viewport" aria-label="Mô phỏng khói 3D tương tác"></main>
+    <aside aria-label="Điều khiển kiểm thử">
+        <h1>Kiểm thử khói / TV2</h1>
+        <p>Kéo để xoay · Cuộn để zoom.<br>Điếu thuốc chỉ là mô hình đánh dấu, không phải phần TV1.</p>
+        <label for="density">Mật độ hạt <output id="density-value" for="density">500</output></label>
+        <input id="density" type="range" min="0" max="2000" step="10" value="500">
+        <label for="wind">Sức gió <output id="wind-value" for="wind">0.5</output></label>
+        <input id="wind" type="range" min="-3" max="3" step="0.1" value="0.5">
+        <label><input id="moving" type="checkbox" checked> Di chuyển đầu thuốc</label>
+        <div class="actions">
+            <button id="pause" type="button" aria-pressed="false">Tạm dừng</button>
+            <button id="reset-camera" type="button">Đặt lại góc nhìn</button>
+        </div>
+        <p id="status" role="status">Đang tải Three.js…</p>
+    </aside>
+    <script type="module">
+        const status = document.querySelector('#status');
+        try {
+            const [THREE, { OrbitControls }, { Sky }, { SmokeSystem }, { CONFIG }] = await Promise.all([
+                import('three'),
+                import('three/addons/controls/OrbitControls.js'),
+                import('three/addons/objects/Sky.js'),
+                import('./smoke.js'),
+                import('./config.js')
+            ]);
+            const viewport = document.querySelector('#viewport');
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 0.9;
+            viewport.appendChild(renderer.domElement);
+            const scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0xc9c7bb, 35, 130);
+            const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 300);
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.minDistance = 2;
+            controls.maxDistance = 20;
+            controls.maxPolarAngle = Math.PI / 2;
+            function resetCamera() {
+                camera.position.set(6, 3.5, 9);
+                controls.target.set(0, 1.6, 0);
+                controls.update();
+            }
+            resetCamera();
+            // ponytail: art-directed 07:30 light; use location/date for a real solar angle.
+            const sun = new THREE.DirectionalLight(0xffd5a1, 3.5);
+            sun.position.set(-10, 4, -8);
+            sun.castShadow = true;
+            sun.shadow.mapSize.set(1024, 1024);
+            Object.assign(sun.shadow.camera, {
+                left: -6, right: 6, top: 6, bottom: -6, near: 0.5, far: 30
+            });
+            sun.shadow.camera.updateProjectionMatrix();
+            sun.shadow.bias = -0.0001;
+            sun.shadow.normalBias = 0.01;
+            scene.add(sun, sun.target);
+            scene.add(new THREE.HemisphereLight(0xbdd7ed, 0x6a5540, 0.9));
+
+            const sky = new Sky();
+            sky.scale.setScalar(150);
+            sky.material.uniforms.turbidity.value = 3;
+            sky.material.uniforms.rayleigh.value = 2;
+            sky.material.uniforms.sunPosition.value.copy(sun.position).normalize();
+            scene.add(sky);
+
+            const floor = new THREE.Mesh(
+                new THREE.PlaneGeometry(250, 250),
+                new THREE.MeshStandardMaterial({ color: 0x635b50, roughness: 0.95 })
+            );
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -0.65;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            const marker = new THREE.Group();
+            const paper = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.09, 0.09, 2.4, 24),
+                new THREE.MeshStandardMaterial({ color: 0xe7e1d5 })
+            );
+            paper.rotation.z = Math.PI / 2;
+            paper.position.x = -1.2;
+            paper.castShadow = true;
+            paper.receiveShadow = true;
+            marker.add(paper);
+            const ember = new THREE.Mesh(
+                new THREE.SphereGeometry(0.095, 16, 12),
+                new THREE.MeshBasicMaterial({ color: 0xff652d })
+            );
+            ember.castShadow = true;
+            marker.add(ember);
+            scene.add(marker);
+            const smoke = new SmokeSystem(scene);
+            const emitter = new THREE.Vector3();
+            const density = document.querySelector('#density');
+            const wind = document.querySelector('#wind');
+            function setDensity() {
+                smoke.setSmokeDensity(density.valueAsNumber);
+                document.querySelector('#density-value').value = density.value;
+            }
+            function setWind() {
+                smoke.setWindStrength(wind.valueAsNumber);
+                document.querySelector('#wind-value').value = wind.value;
+            }
+            density.value = CONFIG.smokeDensity;
+            wind.value = CONFIG.windStrength;
+            setDensity();
+            setWind();
+            density.addEventListener('input', setDensity);
+            wind.addEventListener('input', setWind);
+            const moving = document.querySelector('#moving');
+            const pause = document.querySelector('#pause');
+            let paused = false;
+            pause.addEventListener('click', () => {
+                paused = !paused;
+                pause.textContent = paused ? 'Tiếp tục' : 'Tạm dừng';
+                pause.setAttribute('aria-pressed', String(paused));
+                status.textContent = paused ? 'Đã tạm dừng; vẫn có thể xoay góc nhìn.' : 'Đang chạy · Khói mới bám theo đầu thuốc.';
+            });
+            document.querySelector('#reset-camera').addEventListener('click', resetCamera);
+            function resize() {
+                camera.aspect = viewport.clientWidth / viewport.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+            }
+            window.addEventListener('resize', resize);
+            resize();
+            const clock = new THREE.Clock();
+            let motionTime = 0;
+            function step(dt) {
+                if (moving.checked) {
+                    motionTime += dt;
+                    marker.position.set(Math.sin(motionTime * 0.6) * 0.7, Math.sin(motionTime * 0.9) * 0.15, 0);
+                }
+                ember.getWorldPosition(emitter);
+                smoke.updateEmitterPosition(emitter);
+                smoke.update(dt);
+            }
+            // Reproducible captures: ?t=8&wind=0&moving=0&density=500 (seconds, capped at 30).
+            const params = new URLSearchParams(location.search);
+            if (params.has('density') && Number.isFinite(Number(params.get('density')))) {
+                density.value = params.get('density');
+                setDensity();
+            }
+            if (params.has('wind') && Number.isFinite(Number(params.get('wind')))) {
+                wind.value = params.get('wind');
+                setWind();
+            }
+            if (params.get('moving') === '0') moving.checked = false;
+            if (params.has('t') && Number.isFinite(Number(params.get('t')))) {
+                const frames = Math.round(THREE.MathUtils.clamp(Number(params.get('t')), 0, 30) * 60);
+                for (let frame = 0; frame < frames; frame++) step(1 / 60);
+                pause.click();
+            }
+            renderer.setAnimationLoop(() => {
+                const dt = Math.min(clock.getDelta(), 0.1);
+                if (!paused) step(dt);
+                controls.update();
+                renderer.render(scene, camera);
+            });
+            renderer.domElement.addEventListener('webglcontextlost', () => {
+                status.textContent = 'Mất ngữ cảnh WebGL. Tải lại trang để thử lại.';
+            });
+            status.textContent = paused ? 'Khung hình cố định · Nhấn Tiếp tục để chạy.' : 'Đang chạy · Khói xuất hiện dần trong 6 giây đầu.';
+        } catch (error) {
+            console.error(error);
+            status.textContent = `Không khởi chạy được: ${error.message}. Cần HTTP server, Internet và WebGL.`;
+        }
+    </script>
+</body>
+</html>
