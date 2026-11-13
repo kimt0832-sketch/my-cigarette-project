@@ -71,7 +71,7 @@ dragControls.addEventListener('hoveroff', () => {
 });
 
 // THIẾT LẬP BẢNG ĐIỀU KHIỂN UI (LIL-GUI)
-const gui = new GUI({ title: '🔥 ĐIỀU KHIỂN MÔ PHỎNG' });
+const gui = new GUI({ title: 'ĐIỀU KHIỂN MÔ PHỎNG' });
 
 const params = {
     glowIntensity: CONFIG.glowIntensity,
