@@ -81,15 +81,15 @@ const params = {
 };
 
 gui.add(params, 'glowIntensity', 0, 5, 0.1)
-   .name('🔴 Độ sáng Than')
+   .name('Độ sáng Than')
    .onChange(val => setGlowIntensity(cigaretteGroup, val));
 
 gui.add(params, 'smokeDensity', 50, 2000, 10)
-   .name('💨 Mật độ Khói')
+   .name('Mật độ Khói')
    .onChange(val => smokeSystem.setSmokeDensity(val));
 
 gui.add(params, 'windStrength', 0, 2, 0.05)
-   .name('🍃 Sức gió')
+   .name('Sức gió')
    .onChange(val => smokeSystem.setWindStrength(val));
 
 gui.add(params, 'enableMovement').name('🎬 Thuốc đung đưa');
