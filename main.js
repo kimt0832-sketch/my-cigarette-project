@@ -92,7 +92,7 @@ gui.add(params, 'windStrength', 0, 2, 0.05)
    .name('Sức gió')
    .onChange(val => smokeSystem.setWindStrength(val));
 
-gui.add(params, 'enableMovement').name('🎬 Thuốc đung đưa');
+gui.add(params, 'enableMovement').name('Thuốc đung đưa');
 
 // ANIMATION LOOP
 const clock = new THREE.Clock();
